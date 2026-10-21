@@ -147,7 +147,7 @@ def build(seed=None, qemu=False, highmem=False, c21y=False):
     # cluster-type values are the ASCII 'E' and 'P' used by
     # ml_parse_cpu_topology(); the kernel defaults to one CPU, so use cpus=1
     # for the first boot.  Do not invent timebase-frequency: the vendor DT
-    # does not carry it and XNU's default is 24 MHz until CNTFRQ is measured.
+    # does not carry it.  Patch 0083 makes XNU read CNTFRQ_EL0 instead.
     cpu_nodes = []
     for core in range(1 if qemu else (8 if c21y else 8)):
         if c21y:

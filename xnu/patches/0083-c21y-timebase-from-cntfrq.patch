@@ -1,0 +1,24 @@
+diff --git a/pexpert/arm/pe_identify_machine.c b/pexpert/arm/pe_identify_machine.c
+index 7514575..965931b 100644
+--- a/pexpert/arm/pe_identify_machine.c
++++ b/pexpert/arm/pe_identify_machine.c
+@@ -70,6 +70,19 @@ pe_identify_machine(boot_args * bootArgs)
+ 	gPEClockFrequencyInfo.bus_clock_rate_hz = 100000000;
+ 	gPEClockFrequencyInfo.cpu_clock_rate_hz = 400000000;
+ 
++#if defined(C21Y)
++	/*
++	 * C21Y: the vendor DT has no timebase-frequency. ABL programs
++	 * CNTFRQ_EL0 for the UMS512 system counter; use it instead of
++	 * assuming the generic 24 MHz default.
++	 */
++	uint64_t cntfrq;
++	__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(cntfrq));
++	if (cntfrq != 0) {
++		gPEClockFrequencyInfo.timebase_frequency_hz = (uint32_t)cntfrq;
++	}
++#endif
++
+ 	err = SecureDTLookupEntry(NULL, "/cpus", &cpus);
+ 	assert(err == kSuccess);
+ 
