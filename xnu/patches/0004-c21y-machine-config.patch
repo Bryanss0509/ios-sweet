@@ -215,10 +215,10 @@ index 8226b8c..c7d274f 100644
  # Headers installed into System.framework/PrivateHeaders (userspace internal SDK only).
 diff --git a/pexpert/pexpert/arm64/C21Y.h b/pexpert/pexpert/arm64/C21Y.h
 new file mode 100644
-index 0000000..a721f17
+index 0000000..6cb678e
 --- /dev/null
 +++ b/pexpert/pexpert/arm64/C21Y.h
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,84 @@
 +/*
 + * Board config for Realme C21Y (Unisoc UMS512).
 + * CPU features and hardware-specific settings require verification.
@@ -270,6 +270,7 @@ index 0000000..a721f17
 + */
 +#define C21Y_VTIMER_INTID        27
 +#define C21Y_IPI_SGI             1       // SGI used for cross-CPU signals
++#define SWEET_IPI_SGI            C21Y_IPI_SGI
 +
 +#define GIC_SPURIOUS_IRQ          1023    // IRQ no. for GIC spurious interrupt
 +
