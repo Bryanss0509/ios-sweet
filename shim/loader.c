@@ -123,12 +123,22 @@ const char *loader_boot(uintptr_t dtb)
 	ba->physBase = p->phys_base;
 	ba->memSize = p->mem_size;
 	ba->topOfKernelData = top;
+#if defined(C21Y)
+	/* No verified C21Y framebuffer; XNU logs through the C21Y UART driver. */
+	ba->Video.v_baseAddr = 0;
+	ba->Video.v_display = 0;
+	ba->Video.v_rowBytes = 0;
+	ba->Video.v_width = 0;
+	ba->Video.v_height = 0;
+	ba->Video.v_depth = 0;
+#else
 	ba->Video.v_baseAddr = FB_BASE;
 	ba->Video.v_display = 1;
 	ba->Video.v_rowBytes = FB_STRIDE;
 	ba->Video.v_width = FB_W;
 	ba->Video.v_height = FB_H;
 	ba->Video.v_depth = 32;
+#endif
 	ba->deviceTreeP = adt_pa - pa_of_va_base;	/* xnu reads it with the MMU on: a VA */
 	ba->deviceTreeLength = (uint32_t)p->adt_size;
 	for (int i = 0; i < BOOT_LINE_LENGTH; i++)
@@ -138,7 +148,11 @@ const char *loader_boot(uintptr_t dtb)
 
 	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
 	con_hex("JUMP", entry_pa);
+#if defined(C21Y)
+	con_str("XNU", "jumping (uart console)");
+#else
 	con_str("XNU", "jumping (fbcon clears screen)");
+#endif
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");

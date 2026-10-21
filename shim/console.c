@@ -5,6 +5,99 @@
 #include "console.h"
 #include "font.h"
 
+#if defined(C21Y)
+/*
+ * Realme C21Y debug UART, serial@70100000.  ABL has already configured it
+ * for earlycon at 115200n8; use the Spreadtrum polling path from
+ * drivers/tty/serial/sprd_serial.c: TXD at 0x00, STS1 at 0x0c and the TX
+ * FIFO count in bits 15:8.  A bounded wait keeps a dead UART from hanging.
+ */
+#define UART_BASE		0x70100000UL
+#define UART_TXD		0x00
+#define UART_STS1		0x0c
+#define UART_TX_FIFO_CNT_MASK	0x0000ff00U
+
+volatile uint32_t *con_fb;
+
+static inline uint32_t rd32(uintptr_t a)
+{
+	return *(volatile uint32_t *)a;
+}
+
+static inline void wr32(uintptr_t a, uint32_t v)
+{
+	*(volatile uint32_t *)a = v;
+}
+
+static void uart_putc(char c)
+{
+	for (volatile int i = 0; i < 1000000; i++) {
+		if ((rd32(UART_BASE + UART_STS1) & UART_TX_FIFO_CNT_MASK) == 0)
+			break;
+	}
+	wr32(UART_BASE + UART_TXD, (uint8_t)c);
+}
+
+static void uart_puts(const char *s)
+{
+	while (*s) {
+		if (*s == '\n')
+			uart_putc('\r');
+		uart_putc(*s++);
+	}
+}
+
+void con_clear(uint32_t bg)
+{
+	(void)bg;
+}
+
+void con_skip(void)
+{
+	uart_putc('\n');
+}
+
+void con_str(const char *label, const char *s)
+{
+	uart_puts(label);
+	uart_puts(": ");
+	uart_puts(s);
+	uart_putc('\n');
+}
+
+static void fmt_hex(char *buf, uint64_t v, int digits)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	for (int i = 0; i < digits; i++)
+		buf[i] = hex[(v >> (4 * (digits - 1 - i))) & 0xf];
+	buf[digits] = 0;
+}
+
+void con_hex(const char *label, uint64_t v)
+{
+	char buf[17];
+	fmt_hex(buf, v, 16);
+	con_str(label, buf);
+}
+
+void con_hex2(const char *label, const char *a, uint32_t va, const char *b, uint32_t vb)
+{
+	char buf[9];
+	uart_puts(label);
+	uart_puts(": ");
+	uart_puts(a);
+	fmt_hex(buf, va, 8);
+	uart_puts(buf);
+	if (b) {
+		uart_putc(' ');
+		uart_puts(b);
+		fmt_hex(buf, vb, 8);
+		uart_puts(buf);
+	}
+	uart_putc('\n');
+}
+
+#else
 #define SCALE		3
 #define CH_W		(8 * SCALE)
 #define CH_H		(16 * SCALE)
@@ -95,3 +188,4 @@ void con_hex2(const char *label, const char *a, uint32_t va, const char *b, uint
 	}
 	row++;
 }
+#endif /* C21Y */

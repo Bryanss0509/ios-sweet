@@ -2,7 +2,9 @@
 """Build the minimal Apple Device Tree that the SWEET xnu needs to boot.
 
 Only what the early boot path actually reads (see NOTES.md); every MMIO
-address comes from the sweet live FDT. Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem]
+address comes from the sweet live FDT.  --c21y selects the Realme C21Y
+(UMS512) profile built from realme_c21y_boot_dtb.dtb. Usage:
+  mkadt.py OUT.adt [--dump] [--qemu] [--highmem] [--c21y]
 """
 import hashlib, os, struct, sys
 
@@ -32,6 +34,17 @@ VTIMER_INTID = 19
 # QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 QEMU_VTIMER_INTID = 27
+
+# Realme C21Y (Unisoc UMS512), from realme_c21y_boot_dtb.dtb:
+#   memory <0x80000000 0x80000000>; every static reserved-memory carve-out
+#   ends at 0x94400000, ramoops starts at 0xfff80000.  Keep the kernel below
+#   both.  GICD/GICR and the virtual timer PPI 11 -> INTID 27 are from the DT.
+C21Y_PHYS_BASE = 0x95000000
+C21Y_MEM_SIZE = 0x6a000000
+C21Y_SOC_BASE = 0x10000000
+C21Y_GICD, C21Y_GICR = 0x12000000, 0x12040000
+C21Y_UART, C21Y_UART_SIZE = 0x70100000, 0x100
+C21Y_VTIMER_INTID = 27
 
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 
@@ -68,10 +81,19 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False):
-    """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
-    phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
-    gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu else (GICD, GICR, TIMEBASE)
+def build(seed=None, qemu=False, highmem=False, c21y=False):
+    """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py).
+    c21y=True: UMS512 addresses and eight heterogeneous cores from the C21Y DT."""
+    if qemu and c21y:
+        raise SystemExit('--qemu and --c21y are mutually exclusive')
+    if c21y:
+        phys_base, mem_size = C21Y_PHYS_BASE, C21Y_MEM_SIZE
+        gicd, gicr, timebase = C21Y_GICD, C21Y_GICR, None
+        soc_base = C21Y_SOC_BASE
+    else:
+        phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
+        gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu else (GICD, GICR, TIMEBASE)
+        soc_base = SOC_BASE
     seed = seed if seed is not None else os.urandom(64)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
@@ -94,8 +116,9 @@ def build(seed=None, qemu=False, highmem=False):
         # MobileGestalt's screen class: display-scale (u32, default 0) comes
         # from /chosen, the pixel size from IOMobileFramebuffer. Scale 0 makes
         # SpringBoard's FBSDisplayMode "infxinf@0x" invalid. 1080x2400 @3x =
-        # 360x800 points (like iPhone X class devices).
-        ('display-scale', u32(3)),
+        # 360x800 points (like iPhone X class devices). C21Y has no verified
+        # framebuffer node yet, so leave this unset there.
+        *([] if c21y else [('display-scale', u32(3))]),
         # XNU derives IOPlatformUUID (gethostuuid) from these on arm; without
         # them CFPreferences cannot use kCFPreferencesCurrentHost (no ByHost
         # files), so e.g. DataMigration never records LastSystemVersion and
@@ -119,32 +142,54 @@ def build(seed=None, qemu=False, highmem=False):
         # with CSR_ALLOW_UNRESTRICTED_FS (vm_unix.c shared region checks).
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # SWEET SMP: all eight cores in physical-core order (0-5 Cortex-A55,
-    # 6-7 Cortex-A76), one homogeneous cluster. The kernel defaults to one
-    # and uses cpus=N to select an initial prefix (N <= 8).
-    # QEMU retains its original single-CPU tree: its MPIDRs differ from sweet.
+    # C21Y: six Cortex-A55 cores in cluster 0 and two Cortex-A75 cores in
+    # cluster 1 (cpus/cpu@0..500 and cpu@600/700 in the vendor DT).  XNU's
+    # cluster-type values are the ASCII 'E' and 'P' used by
+    # ml_parse_cpu_topology(); the kernel defaults to one CPU, so use cpus=1
+    # for the first boot.  Do not invent timebase-frequency: the vendor DT
+    # does not carry it and XNU's default is 24 MHz until CNTFRQ is measured.
     cpu_nodes = []
-    for core in range(1 if qemu else 8):
-        cpu_nodes.append(node(f'cpu{core}', [
-            ph(),
-            ('device_type', cstr('cpu')),
-            ('compatible', cstr('qcom,kryo470') + cstr('ARM,v8')),
-            ('reg', u32(core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
-            ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
-            ('cluster-id', u32(0)),  # descriptive; see ml_parse_cpu_topology
-            ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
-            ('die-cluster-id', u32(0)),
-            ('cluster-core-id', u32(core)),
-            ('l2-cache-id', u32(core)),  # distinct per-core L2 nodes in live FDT
-            ('l3-cache-id', u32(0)),     # shared L3
-            ('state', cstr('running' if core == 0 else 'stopped')),
-            ('timebase-frequency', u32(timebase)),
-            ('clock-frequency', u32(2304000000 if core >= 6 else 1804800000)),
-            ('bus-frequency', u32(100000000)),
-            ('memory-frequency', u32(1866000000)),
-            ('peripheral-frequency', u32(timebase)),
-            ('fixed-frequency', u32(timebase)),
-        ]))
+    for core in range(1 if qemu else (8 if c21y else 8)):
+        if c21y:
+            perf = core >= 6
+            cluster = 1 if perf else 0
+            core_in_cluster = core - 6 if perf else core
+            props = [
+                ph(),
+                ('device_type', cstr('cpu')),
+                ('compatible', cstr('arm,cortex-a75' if perf else 'arm,cortex-a55') + cstr('arm,armv8')),
+                ('reg', u32(core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
+                ('cpu-id', u32(core)),
+                ('cluster-id', u32(cluster)),
+                ('cluster-type', u32(ord('P') if perf else ord('E'))),
+                ('die-cluster-id', u32(cluster)),
+                ('cluster-core-id', u32(core_in_cluster)),
+                ('l2-cache-id', u32(core)),
+                ('l3-cache-id', u32(0)),
+                ('state', cstr('running' if core == 0 else 'stopped')),
+            ]
+        else:
+            props = [
+                ph(),
+                ('device_type', cstr('cpu')),
+                ('compatible', cstr('qcom,kryo470') + cstr('ARM,v8')),
+                ('reg', u32(core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
+                ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
+                ('cluster-id', u32(0)),  # descriptive; see ml_parse_cpu_topology
+                ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
+                ('die-cluster-id', u32(0)),
+                ('cluster-core-id', u32(core)),
+                ('l2-cache-id', u32(core)),  # distinct per-core L2 nodes in live FDT
+                ('l3-cache-id', u32(0)),     # shared L3
+                ('state', cstr('running' if core == 0 else 'stopped')),
+                ('timebase-frequency', u32(timebase)),
+                ('clock-frequency', u32(2304000000 if core >= 6 else 1804800000)),
+                ('bus-frequency', u32(100000000)),
+                ('memory-frequency', u32(1866000000)),
+                ('peripheral-frequency', u32(timebase)),
+                ('fixed-frequency', u32(timebase)),
+            ]
+        cpu_nodes.append(node(f'cpu{core}', props))
     cpus = node('cpus', [ph(), ('#address-cells', u32(1)),
                          ('#size-cells', u32(0))], cpu_nodes)
 
@@ -152,8 +197,8 @@ def build(seed=None, qemu=False, highmem=False):
         ph(),
         ('compatible', cstr('arm,gic-v3')),
         ('interrupt-controller', b''),
-        ('virtual-timer-intid', u32(QEMU_VTIMER_INTID if qemu else VTIMER_INTID)),
-        ('reg', u64(gicd - SOC_BASE, GICD_SIZE, gicr - SOC_BASE, GICR_SIZE)),
+        ('virtual-timer-intid', u32(C21Y_VTIMER_INTID if c21y else (QEMU_VTIMER_INTID if qemu else VTIMER_INTID))),
+        ('reg', u64(gicd - soc_base, GICD_SIZE, gicr - soc_base, GICR_SIZE)),
     ])
     arm_io = node('arm-io', [
         ph(),
@@ -161,7 +206,7 @@ def build(seed=None, qemu=False, highmem=False):
         ('compatible', cstr('sweet-io') + cstr('arm-io')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-        ('ranges', u64(0, SOC_BASE, 0x100000000 - SOC_BASE)),
+        ('ranges', u64(0, soc_base, 0x100000000 - soc_base)),
     ], [gic,
         # No hardware: watchdogd checks IODeviceTree:/arm-io/wdt for no-pmu and
         # otherwise crashes trying to set the PMU boot stage (customer builds
@@ -170,16 +215,17 @@ def build(seed=None, qemu=False, highmem=False):
         # Main display: IOMobileFramebuffer.framework counts /arm-io children
         # with this device_type and reads the canvas size from the node
         # (the presented iPhone X size, see SweetFramebuffer.cpp);
-        # the kernel's AppleCLCD matches the compatible string.
-        node('disp0', [
+        # the kernel's AppleCLCD matches the compatible string.  C21Y has no
+        # verified framebuffer address yet, so do not register one.
+        *([] if c21y else [node('disp0', [
             ph(),
             ('device_type', cstr('display-subsystem')),
             ('compatible', cstr('sweet,display')),
             ('canvas-width', u32(1125)),
             ('canvas-height', u32(2436)),
-        ])])
+        ])])])
 
-    fbcon = node('sweet-fbcon', [
+    fbcon = None if c21y else node('sweet-fbcon', [
         ph(),
         ('reg', u64(FB, FB_SIZE)),
         ('width', u32(FB_W)),
@@ -188,11 +234,21 @@ def build(seed=None, qemu=False, highmem=False):
     ])
 
     # bsd/dev/sweet_ufs.c: the UFS host ABL leaves running (absolute physical reg).
-    ufs = node('sweet-ufs', [
+    # C21Y has no UFS node; its boot device is the 71400000.sdio eMMC.
+    ufs = None if c21y else node('sweet-ufs', [
         ph(),
         ('compatible', cstr('qcom,ufshc')),
         ('reg', u64(UFS, UFS_SIZE)),
     ])
+
+    # C21Y debug UART: serial@70100000, already initialized by ABL's earlycon.
+    # The pe_serial.c C21Y patch maps this absolute physical address and
+    # registers a polled TX-only console, so XNU output does not depend on a
+    # framebuffer that has not been located yet.
+    c21y_uart = node('c21y-uart', [
+        ph(),
+        ('reg', u64(C21Y_UART, C21Y_UART_SIZE)),
+    ]) if c21y else None
 
     # pmap_compute_max_asids requires the node even when no overrides are set.
     # An absent pmap-max-asids property selects XNU's own MAX_ASIDS default.
@@ -217,18 +273,24 @@ def build(seed=None, qemu=False, highmem=False):
     # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching.
     return node('device-tree', [
         ph(),
-        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + cstr('xiaomi,sweet') + cstr('qcom,sm7150') + cstr('AppleARM')),
+        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + cstr('xiaomi,sweet') +
+         (cstr('sprd,ums512') if c21y else cstr('qcom,sm7150')) + cstr('AppleARM')),
         ('model', cstr('iPhone10,3')),
         ('target-type', cstr('D22')),
         ('target-sub-type', cstr('D22AP')),
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([] if qemu else [ufs]))
+    ], [chosen, defaults, cpus, arm_io, buttons] +
+       ([c21y_uart] if c21y_uart else []) +
+       ([fbcon] if fbcon else []) +
+       product +
+       ([] if qemu or c21y else [ufs]))
 
 
 if __name__ == '__main__':
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv)
+    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv,
+                 c21y='--c21y' in sys.argv)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:

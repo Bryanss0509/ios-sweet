@@ -1,0 +1,102 @@
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -842,6 +842,77 @@
+ 	}
+ }
+ 
++#if C21Y
++/*
++ * Realme C21Y (Unisoc UMS512) polled debug UART, serial@70100000.  ABL's
++ * earlycon already configured 115200n8; this driver only has to transmit.
++ * Register offsets are from drivers/tty/serial/sprd_serial.c:
++ * TXD 0x00, STS1 0x0c, TX FIFO count in bits 15:8.
++ */
++#define C21Y_UART_TXD			0x00
++#define C21Y_UART_STS1			0x0c
++#define C21Y_UART_TX_FIFO_CNT_MASK	0x0000ff00u
++
++static volatile uint8_t *c21y_uart_base;
++
++static unsigned int
++c21y_uart_transmit_ready(void)
++{
++	uint32_t const sts1 = *(volatile uint32_t *)(c21y_uart_base + C21Y_UART_STS1);
++	return (sts1 & C21Y_UART_TX_FIFO_CNT_MASK) == 0;
++}
++
++static void
++c21y_uart_transmit_data(uint8_t c)
++{
++	*(volatile uint32_t *)(c21y_uart_base + C21Y_UART_TXD) = c;
++}
++
++static unsigned int
++c21y_uart_receive_ready(void)
++{
++	return 0;
++}
++
++static uint8_t
++c21y_uart_receive_data(void)
++{
++	return 0;
++}
++
++static void
++c21y_uart_init(void)
++{
++}
++
++SECURITY_READ_ONLY_LATE(static struct pe_serial_functions) c21y_uart_serial_functions =
++{
++	.init = c21y_uart_init,
++	.transmit_ready = c21y_uart_transmit_ready,
++	.transmit_data = c21y_uart_transmit_data,
++	.receive_ready = c21y_uart_receive_ready,
++	.receive_data = c21y_uart_receive_data,
++	.device = SERIAL_C21Y_UART
++};
++
++static void
++c21y_uart_probe(void)
++{
++	DTEntry entry;
++	uint64_t const *reg;
++	unsigned int size;
++
++	if (SecureDTFindEntry("name", "c21y-uart", &entry) != kSuccess ||
++	    SecureDTGetProperty(entry, "reg", (void const **)&reg, &size) != kSuccess || size < 16) {
++		return;
++	}
++	c21y_uart_base = (volatile uint8_t *)ml_io_map(reg[0], reg[1]);
++	if (c21y_uart_base != NULL) {
++		register_serial_functions(&c21y_uart_serial_functions);
++	}
++}
++#endif /* C21Y */
++
+ #if HIBERNATION
+ /**
+  * Transitions the serial driver into a mode that can be run in the hibernation
+@@ -923,6 +994,9 @@
+ 	PE_parse_boot_argn("disable-uart-irq", &disable_uart_irq, sizeof(disable_uart_irq));
+ 
+ 	fbcon_probe();
++#if C21Y
++	c21y_uart_probe();
++#endif
+ 
+ #ifdef PI3_UART
+ 	if (SecureDTFindEntry("name", "gpio", &entryP) == kSuccess) {
+--- a/pexpert/pexpert/arm/protos.h
++++ b/pexpert/pexpert/arm/protos.h
+@@ -48,7 +48,8 @@
+ 	SERIAL_PI3_UART=0x4,
+ 	SERIAL_VMAPPLE_UART=0x8,
+ 	SERIAL_DCC_UART=0x10,
+-	SERIAL_SWEET_FBCON=0x20
++	SERIAL_SWEET_FBCON=0x20,
++	SERIAL_C21Y_UART=0x40
+ } serial_device_t;
+ 
+ kern_return_t serial_irq_enable(serial_device_t device);

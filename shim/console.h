@@ -1,10 +1,18 @@
 #pragma once
 #include <stdint.h>
 
+#if defined(C21Y)
+/* C21Y: no verified framebuffer address; shim output goes to the debug UART. */
+#define FB_BASE		0UL
+#define FB_W		0
+#define FB_H		0
+#define FB_STRIDE	0
+#else
 #define FB_BASE		0x9c000000UL	/* reserved-memory cont_splash_region */
 #define FB_W		1080
 #define FB_H		2400
 #define FB_STRIDE	(FB_W * 4)	/* a8r8g8b8, matches mainline simplefb */
+#endif
 
 #define RED	0xffff0000U
 #define BLUE	0xff0000a0U
