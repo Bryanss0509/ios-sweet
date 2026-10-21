@@ -51,7 +51,7 @@ jobs:
           rm -f dxb/patches/0004-sweet-machine-config.patch
           rm -f dxb/patches/0004-sweet-machine-config.patch.bak-c21y-*
           # libfirehose_kernel is built arm64e-only; the SWEET kernel is plain arm64
-          sed -i '' 's/ARCHS="arm64" VALID_ARCHS="arm64"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
+          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
           ls dxb/patches
 
