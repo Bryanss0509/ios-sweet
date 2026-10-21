@@ -4,7 +4,7 @@
 
 **STATE: the C21Y kernel builds successfully. It has not been booted on C21Y hardware yet.**
 
-- HEAD `a829845`; CI run `39589575259` succeeded (7m23s, `DEVELOPMENT ARM64 C21Y`, macOS 13.5) with the C21Y UART patch.
+- Code HEAD `a829845` (notes commit `96f3b64`); CI run `39589575259` succeeded (7m23s, `DEVELOPMENT ARM64 C21Y`, macOS 13.5) with the C21Y UART patch.
 - Artifact `xnu-kernel`: `kernel.development.c21y`, 17,205,960 bytes, SHA256 `5ec3ed5a1d98adaeda9d3bc8b36a6caf26a53b6d74957515409554bfb6499af9`, Mach-O arm64 `NOUNDEFS|PIE`; contains the `c21y-uart` ADT node name. Previous (pre-UART) kernel: 17,205,640 bytes, SHA256 `66e9b00455fc5da0f06b8d172627abe5715b0225976b60b99f27ad5fb14462de`, local copy `/tmp/c21y-kernel/kernel.development.c21y`.
 - Build fixes on this branch: `config/MASTER.arm64.c21y -> MASTER.arm64.sweet` (0004) so the open-source pmap/asm sources are selected; HFS/pthread/BearSSL stagers accept `SWEET|C21Y`; their Makefile blocks use `ifneq ($(filter SWEET C21Y,$(CURRENT_MACHINE_CONFIG)),)`; C21Y now defines `SWEET` and `ARM64_BOARD_CONFIG_SWEET` both in `C21Y.h` and globally in `MACHINE_FLAGS_ARM64_C21Y`. The global define is required because standalone provider TUs (`sweet_ufs.c`, `sweet_amfi.c`, BearSSL wrappers) do not include `board_config.h`.
 - This makes C21Y compile the SWEET platform stack: UFS root, built-in HFS, libpthread, BearSSL AES/hashes, AMFI/sandbox, console log, process sampler, IOSurface/IOMFB and display. Do not remove the macros without replacing every `#if defined(SWEET)` / `#if defined(ARM64_BOARD_CONFIG_SWEET)` gate or the link will fail again.
