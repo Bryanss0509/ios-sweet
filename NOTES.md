@@ -1,5 +1,17 @@
 # iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
 
+## C21Y port handoff (2026-10-21, branch `c21y-fix-symbols`)
+
+**STATE: the C21Y kernel builds successfully. It has not been booted on C21Y hardware yet.**
+
+- HEAD `ff36d23`; CI run `39580733963` succeeded (7m16s, `DEVELOPMENT ARM64 C21Y`, macOS 13.5).
+- Artifact `xnu-kernel`: `kernel.development.c21y`, 17,205,640 bytes, SHA256 `66e9b00455fc5da0f06b8d172627abe5715b0225976b60b99f27ad5fb14462de`, Mach-O arm64 `NOUNDEFS|PIE`. Local copy `/tmp/c21y-kernel/kernel.development.c21y`.
+- Build fixes on this branch: `config/MASTER.arm64.c21y -> MASTER.arm64.sweet` (0004) so the open-source pmap/asm sources are selected; HFS/pthread/BearSSL stagers accept `SWEET|C21Y`; their Makefile blocks use `ifneq ($(filter SWEET C21Y,$(CURRENT_MACHINE_CONFIG)),)`; C21Y now defines `SWEET` and `ARM64_BOARD_CONFIG_SWEET` both in `C21Y.h` and globally in `MACHINE_FLAGS_ARM64_C21Y`. The global define is required because standalone provider TUs (`sweet_ufs.c`, `sweet_amfi.c`, BearSSL wrappers) do not include `board_config.h`.
+- This makes C21Y compile the SWEET platform stack: UFS root, built-in HFS, libpthread, BearSSL AES/hashes, AMFI/sandbox, console log, process sampler, IOSurface/IOMFB and display. Do not remove the macros without replacing every `#if defined(SWEET)` / `#if defined(ARM64_BOARD_CONFIG_SWEET)` gate or the link will fail again.
+- Still skipped by the workflow: `0017` (virtual-timer IRQ; `pe_fiq.c` conflict), `0065`/`0078` (SMP PSCI / 8 cores; require `SWEET.h`), plus pre-existing `TrustCache.patch`, `iobuffermemd_monterey.patch`, `skywalk_sonoma.patch`, `syntax_checker_sonoma.patch`. These matter for C21Y timer/SMP bring-up and must be revisited.
+- Next concrete step: build a C21Y boot payload/shim image (there is no C21Y-specific payload/ADT tooling yet; `realme_c21y_boot_dtb.dtb` at the repo root is the reference DT), verify the C21Y timer/GIC/UFS assumptions from the DT, then `fastboot boot` a temporary image and capture serial/panel output. Do not flash; Android/userdata must remain untouched until the user approves.
+- `tools/validate-repo.py` still fails on the pre-existing duplicate patch number `0004` (`0004-sweet-machine-config.patch` and `0004-c21y-machine-config.patch`).
+
 ## Agent handoff / active work (2026-10-15, latest)
 
 ### >>> UPDATE 2026-10-18 (read first, then the 10-17 handoff below) <<<
