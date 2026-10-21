@@ -77,10 +77,13 @@ diff --git a/bsd/conf/files b/bsd/conf/files
 diff --git a/bsd/conf/Makefile.template b/bsd/conf/Makefile.template
 --- a/bsd/conf/Makefile.template
 +++ b/bsd/conf/Makefile.template
-@@ -51,6 +51,15 @@
+@@ -51,6 +51,19 @@
  sweet_pthread_init.o_INCFLAGS = $(SWEET_PTHREAD_INC)
  sweet_pthread_support.o_INCFLAGS = $(SWEET_PTHREAD_INC)
  sweet_pthread_synch.o_INCFLAGS = $(SWEET_PTHREAD_INC)
++endif
++
++ifneq ($(filter SWEET C21Y,$(CURRENT_MACHINE_CONFIG)),)
 +
 +# Apple OSS HFS built in (bsd/sweet_hfs): compiled like the kext, see sweet_hfs_compat.h.
 +# The compat header must come after the kernel's -D options, hence _CFLAGS_ADD.
