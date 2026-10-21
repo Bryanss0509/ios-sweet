@@ -77,7 +77,7 @@ diff --git a/bsd/conf/files b/bsd/conf/files
 diff --git a/bsd/conf/Makefile.template b/bsd/conf/Makefile.template
 --- a/bsd/conf/Makefile.template
 +++ b/bsd/conf/Makefile.template
-@@ -51,6 +51,19 @@
+@@ -51,6 +51,18 @@
  sweet_pthread_init.o_INCFLAGS = $(SWEET_PTHREAD_INC)
  sweet_pthread_support.o_INCFLAGS = $(SWEET_PTHREAD_INC)
  sweet_pthread_synch.o_INCFLAGS = $(SWEET_PTHREAD_INC)
