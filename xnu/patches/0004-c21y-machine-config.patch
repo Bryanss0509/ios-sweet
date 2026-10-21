@@ -317,3 +317,11 @@ index 9454534..88e524a 100644
  #ifdef ARM64_BOARD_CONFIG_VMAPPLE
  #include <pexpert/arm64/VMAPPLE.h>
  
+diff --git a/config/MASTER.arm64.c21y b/config/MASTER.arm64.c21y
+new file mode 120000
+index 0000000..3d4e0de
+--- /dev/null
++++ b/config/MASTER.arm64.c21y
+@@ -0,0 +1 @@
++MASTER.arm64.sweet
+\ No newline at end of file
