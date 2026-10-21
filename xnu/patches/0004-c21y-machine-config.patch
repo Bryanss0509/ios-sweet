@@ -215,10 +215,10 @@ index 8226b8c..c7d274f 100644
  # Headers installed into System.framework/PrivateHeaders (userspace internal SDK only).
 diff --git a/pexpert/pexpert/arm64/C21Y.h b/pexpert/pexpert/arm64/C21Y.h
 new file mode 100644
-index 0000000..a044ad0
+index 0000000..a721f17
 --- /dev/null
 +++ b/pexpert/pexpert/arm64/C21Y.h
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,83 @@
 +/*
 + * Board config for Realme C21Y (Unisoc UMS512).
 + * CPU features and hardware-specific settings require verification.
@@ -237,6 +237,14 @@ index 0000000..a044ad0
 +#define NO_ECORE                  1
 +
 +#define C21Y                     1
++
++/*
++ * C21Y reuses the SWEET platform code (storage, display, crash log, ...).
++ * The SWEET board name is only used as a platform feature gate here; the
++ * SoC/board values come from this C21Y header.
++ */
++#define SWEET                    1
++#define ARM64_BOARD_CONFIG_SWEET 1
 +
 +#define ARM_ARCH_TIMER
 +#define __ARM_ARCH__              8
